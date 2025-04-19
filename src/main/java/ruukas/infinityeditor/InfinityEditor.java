@@ -3,6 +3,8 @@ package ruukas.infinityeditor;
 import java.io.File;
 
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.network.NetworkRegistry;
+import net.minecraftforge.fml.relauncher.Side;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.input.Keyboard;
 
@@ -35,12 +37,14 @@ public class InfinityEditor {
     public static KeyBinding keybindCopy;
     // public static KeyBinding keybindRealm;
     public static KeyBinding keybindSave;
+    public static KeyBinding keybindBuild;
 
     public static CreativeTabs UNAVAILABLE, REALM, BANNERS, SKULLS, FIREWORKS, THIEF, VOID;
 
     public static RealmController realmController;
 
     public static VoidBuffer voidBuffer = new VoidBuffer();
+    private static int packetId = 0;
 
     // TODO
     // ADD Config
@@ -150,6 +154,8 @@ public class InfinityEditor {
 
         keybindSave = new KeyBinding("key.infinitysave.desc", Keyboard.KEY_G, "key.infinity.category");
         ClientRegistry.registerKeyBinding(keybindSave);
+        keybindBuild = new KeyBinding("key.infinitybuild.desc", Keyboard.KEY_G, "key.infinity.category");
+        ClientRegistry.registerKeyBinding(keybindBuild);
     }
 
     @Mod.EventHandler

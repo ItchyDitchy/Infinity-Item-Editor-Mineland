@@ -1,12 +1,22 @@
 package ruukas.infinityeditor.event;
 
+import com.github.lunatrius.schematica.api.ISchematic;
+import com.github.lunatrius.schematica.client.printer.SchematicPrinter;
+import com.github.lunatrius.schematica.client.printer.registry.PlacementData;
+import com.github.lunatrius.schematica.client.printer.registry.PlacementRegistry;
+import com.github.lunatrius.schematica.client.world.SchematicWorld;
+import com.github.lunatrius.schematica.handler.ConfigurationHandler;
+import com.github.lunatrius.schematica.reference.Constants;
 import com.google.common.base.Predicates;
 import io.netty.channel.ChannelDuplexHandler;
+import net.minecraft.block.Block;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.gui.inventory.GuiContainerCreative;
+import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.settings.GameSettings;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
@@ -15,15 +25,19 @@ import net.minecraft.entity.item.EntityArmorStand;
 import net.minecraft.entity.item.EntityItemFrame;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
+import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
+import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemBucket;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.JsonToNBT;
 import net.minecraft.nbt.NBTException;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.play.client.CPacketEntityAction;
 import net.minecraft.network.play.server.SPacketEntityEquipment;
-import net.minecraft.util.EntitySelectors;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.*;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
@@ -35,6 +49,7 @@ import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.client.event.RenderTooltipEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
+import net.minecraftforge.fluids.BlockFluidBase;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent.KeyInputEvent;
@@ -45,11 +60,11 @@ import ruukas.infinityeditor.data.InfinityConfig;
 import ruukas.infinityeditor.data.thevoid.VoidController;
 import ruukas.infinityeditor.gui.GuiInfinity.ItemStackHolder;
 import ruukas.infinityeditor.gui.GuiItem;
-import ruukas.infinityeditor.util.GiveHelper;
-import ruukas.infinityeditor.util.InventoryUtils;
+import ruukas.infinityeditor.util.*;
+import net.minecraft.world.World;
 
 import javax.annotation.Nullable;
-import java.util.List;
+import java.util.*;
 
 import static ruukas.infinityeditor.InfinityEditor.MODID;
 import static ruukas.infinityeditor.InfinityEditor.voidBuffer;
@@ -125,8 +140,249 @@ public class InfinityEventHandler {
                 InventoryUtils.onPickBlock(mc.objectMouseOver, player, mc.world);
             }
         }
+
+        if (InfinityEditor.keybindBuild.isPressed() && mc.world != null) {
+            EntityPlayerSP player = mc.player;
+//            List<ItemStack> shulkers = new ArrayList<>();
+            if (SchematicPrinter.INSTANCE.getSchematic() == null) {
+                return;
+            }
+//            Block targetBlock = TargetBlockHelper.getTargetBlock(player, 5);
+            EnumFacing face = TargetBlockHelper.getTargetBlockFace(player, 5);
+            if (face == null) {
+                return;
+            }
+            BlockPos tBlockPos = TargetBlockHelper.getRayTraceResult(player, 5).getBlockPos();
+            tBlockPos = tBlockPos.offset(face);
+
+            SchematicWorld schematicWorld = SchematicPrinter.INSTANCE.getSchematic();
+            ISchematic schematic = schematicWorld.getSchematic();
+            int schematicX = tBlockPos.getX() - schematicWorld.position.getX();
+            int schematicY = schematicWorld.position.getY();
+            int schematicZ = tBlockPos.getZ() - schematicWorld.position.getZ();
+            Map<Integer, String> blockMap = new HashMap<>();
+            int count = 0;
+            player.sendMessage(new TextComponentString("[Itchymatica] Building blueprint for " + schematicX + " " + schematicY + " " + schematicZ));
+            for (int y = 0; y < schematic.getHeight(); y++) {
+                IBlockState blockState = schematicWorld.getBlockState(new BlockPos(schematicX, y, schematicZ));
+                int blockId = Block.getIdFromBlock(blockState.getBlock());
+                if (blockId == 0) continue;
+                count++;
+                blockMap.put(blockId, blockMap.getOrDefault(blockId, "") + (schematicY + y) + "#" + blockState.getBlock().getMetaFromState(blockState) + " ");
+            }
+            ItemStack shulkerBuilder = new ItemStack(Blocks.BLACK_SHULKER_BOX);
+            shulkerBuilder.setStackDisplayName("Schematic Builder " + tBlockPos.getX() + " " + tBlockPos.getZ());
+            for (int blockId : blockMap.keySet()) {
+                blockMap.put(blockId, blockMap.get(blockId).trim());
+                ItemStack itemStack = new ItemStack(Item.getItemById(blockId));
+                itemStack.setStackDisplayName(blockMap.get(blockId).trim());
+                shulkerBuilder = ShulkerBoxHelper.addItemToShulkerBox(shulkerBuilder, itemStack);
+                System.out.println("Adding item " + blockId + " with data " + blockMap.get(blockId).trim());
+            }
+//            HotbarHelper.setItemInFirstHotbarSlot(player, shulkerBuilder);
+//            swapToItem(player.inventory, shulkerBuilder);
+            player.sendMessage(new TextComponentString("[Itchymatica] Received blueprint for " + count + " blocks of " + blockMap.size() + " types."));
+            placeBlock(Minecraft.getMinecraft().world, player, tBlockPos, Minecraft.getMinecraft().world.getBlockState(tBlockPos), shulkerBuilder);
+
+//            for (ItemStack shulker : shulkers) {
+//                InfinityEditor.realmController.addItemStack(player, shulker);
+//            }
+        }
+    }
+    private static List<EnumFacing> getSolidSides(final World world, final BlockPos pos) {
+        if (!ConfigurationHandler.placeAdjacent) {
+            return Arrays.asList(EnumFacing.VALUES);
+        }
+
+        final List<EnumFacing> list = new ArrayList<EnumFacing>();
+
+        for (final EnumFacing side : EnumFacing.VALUES) {
+            if (isSolid(world, pos, side)) {
+                list.add(side);
+            }
+        }
+
+        return list;
     }
 
+    private static boolean isSolid(final World world, final BlockPos pos, final EnumFacing side) {
+        final BlockPos offset = pos.offset(side);
+
+        final IBlockState blockState = world.getBlockState(offset);
+        final Block block = blockState.getBlock();
+
+        if (block == null) {
+            return false;
+        }
+
+        if (block.isAir(blockState, world, offset)) {
+            return false;
+        }
+
+        if (block instanceof BlockFluidBase) {
+            return false;
+        }
+
+        if (block.isReplaceable(world, offset)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static boolean placeBlock(final WorldClient world, final EntityPlayerSP player, final BlockPos pos, final IBlockState blockState, final ItemStack itemStack) {
+        if (itemStack.getItem() instanceof ItemBucket) {
+            return false;
+        }
+
+        final PlacementData data = PlacementRegistry.INSTANCE.getPlacementData(blockState, itemStack);
+        if (data != null && !data.isValidPlayerFacing(blockState, player, pos, world)) {
+            return false;
+        }
+
+        final List<EnumFacing> solidSides = getSolidSides(world, pos);
+
+        if (solidSides.size() == 0) {
+            return false;
+        }
+
+        final EnumFacing direction;
+        final float offsetX;
+        final float offsetY;
+        final float offsetZ;
+        final int extraClicks;
+
+        if (data != null) {
+            final List<EnumFacing> validDirections = data.getValidBlockFacings(solidSides, blockState);
+            if (validDirections.size() == 0) {
+                return false;
+            }
+
+            direction = validDirections.get(0);
+            offsetX = data.getOffsetX(blockState);
+            offsetY = data.getOffsetY(blockState);
+            offsetZ = data.getOffsetZ(blockState);
+            extraClicks = data.getExtraClicks(blockState);
+        } else {
+            direction = solidSides.get(0);
+            offsetX = 0.5f;
+            offsetY = 0.5f;
+            offsetZ = 0.5f;
+            extraClicks = 0;
+        }
+
+        if (!swapToItem(player.inventory, itemStack)) {
+            return false;
+        }
+
+        return placeBlock(world, player, pos, direction, offsetX, offsetY, offsetZ, extraClicks);
+    }
+
+    private static boolean placeBlock(final WorldClient world, final EntityPlayerSP player, final BlockPos pos, final EnumFacing direction, final float offsetX, final float offsetY, final float offsetZ, final int extraClicks) {
+        final EnumHand hand = EnumHand.MAIN_HAND;
+        final ItemStack itemStack = player.getHeldItem(hand);
+        boolean success = false;
+
+        if (!Minecraft.getMinecraft().playerController.isInCreativeMode() && !itemStack.isEmpty() && itemStack.getCount() <= extraClicks) {
+            return false;
+        }
+
+        final BlockPos offset = pos.offset(direction);
+        final EnumFacing side = direction.getOpposite();
+        final Vec3d hitVec = new Vec3d(offset.getX() + offsetX, offset.getY() + offsetY, offset.getZ() + offsetZ);
+
+        success = placeBlock(world, player, itemStack, offset, side, hitVec, hand);
+        for (int i = 0; success && i < extraClicks; i++) {
+            success = placeBlock(world, player, itemStack, offset, side, hitVec, hand);
+        }
+
+        if (itemStack.getCount() == 0 && success) {
+            player.inventory.mainInventory.set(player.inventory.currentItem, ItemStack.EMPTY);
+        }
+
+        return success;
+    }
+
+    private static boolean placeBlock(final WorldClient world, final EntityPlayerSP player, final ItemStack itemStack, final BlockPos pos, final EnumFacing side, final Vec3d hitVec, final EnumHand hand) {
+        // FIXME: where did this event go?
+        /*
+        if (ForgeEventFactory.onPlayerInteract(player, Action.RIGHT_CLICK_BLOCK, world, pos, side, hitVec).isCanceled()) {
+            return false;
+        }
+        */
+
+        // FIXME: when an adjacent block is not required the blocks should be placed 1 block away from the actual position (because air is replaceable)
+        final BlockPos actualPos = ConfigurationHandler.placeAdjacent ? pos : pos.offset(side);
+        final EnumActionResult result = Minecraft.getMinecraft().playerController.processRightClickBlock(player, world, actualPos, side, hitVec, hand);
+        if ((result != EnumActionResult.SUCCESS)) {
+            return false;
+        }
+
+        player.swingArm(hand);
+        return true;
+    }
+
+    private void syncSneaking(final EntityPlayerSP player, final boolean isSneaking) {
+        player.setSneaking(isSneaking);
+        player.connection.sendPacket(new CPacketEntityAction(player, isSneaking ? CPacketEntityAction.Action.START_SNEAKING : CPacketEntityAction.Action.STOP_SNEAKING));
+    }
+
+    private static boolean swapToItem(final InventoryPlayer inventory, final ItemStack itemStack) {
+        return swapToItem(inventory, itemStack, true);
+    }
+
+    private static boolean swapToItem(final InventoryPlayer inventory, final ItemStack itemStack, final boolean swapSlots) {
+        final int slot = getInventorySlotWithItem(inventory, itemStack);
+
+        //  && (slot < Constants.Inventory.InventoryOffset.HOTBAR || slot >= Constants.Inventory.InventoryOffset.HOTBAR + Constants.Inventory.Size.HOTBAR)
+        if (Minecraft.getMinecraft().playerController.isInCreativeMode() && ConfigurationHandler.swapSlotsQueue.size() > 0) {
+            inventory.currentItem = getNextSlot();
+            inventory.setInventorySlotContents(inventory.currentItem, itemStack.copy());
+            Minecraft.getMinecraft().playerController.sendSlotPacket(inventory.getStackInSlot(inventory.currentItem), Constants.Inventory.SlotOffset.HOTBAR + inventory.currentItem);
+            return true;
+        }
+
+        if (slot >= Constants.Inventory.InventoryOffset.HOTBAR && slot < Constants.Inventory.InventoryOffset.HOTBAR + Constants.Inventory.Size.HOTBAR) {
+            inventory.currentItem = slot;
+            return true;
+        } else if (swapSlots && slot >= Constants.Inventory.InventoryOffset.INVENTORY && slot < Constants.Inventory.InventoryOffset.INVENTORY + Constants.Inventory.Size.INVENTORY) {
+            if (swapSlots(inventory, slot)) {
+                return swapToItem(inventory, itemStack, false);
+            }
+        }
+
+        return false;
+    }
+
+    private static int getInventorySlotWithItem(final InventoryPlayer inventory, final ItemStack itemStack) {
+        for (int i = 0; i < inventory.mainInventory.size(); i++) {
+            if (inventory.mainInventory.get(i).isItemEqual(itemStack)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean swapSlots(final InventoryPlayer inventory, final int from) {
+        if (ConfigurationHandler.swapSlotsQueue.size() > 0) {
+            final int slot = getNextSlot();
+
+            swapSlots(from, slot);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int getNextSlot() {
+        final int slot = ConfigurationHandler.swapSlotsQueue.poll() % Constants.Inventory.Size.HOTBAR;
+        ConfigurationHandler.swapSlotsQueue.offer(slot);
+        return slot;
+    }
+
+    private static boolean swapSlots(final int from, final int to) {
+        return Minecraft.getMinecraft().playerController.windowClick(Minecraft.getMinecraft().player.inventoryContainer.windowId, from, to, ClickType.SWAP, Minecraft.getMinecraft().player) == ItemStack.EMPTY;
+    }
 
     @SubscribeEvent
     public static void onKeyboardInput(GuiScreenEvent.KeyboardInputEvent.Pre e) {

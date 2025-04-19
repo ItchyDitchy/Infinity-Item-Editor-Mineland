@@ -114,5 +114,9 @@ publishing {
         }
     }
 }
+dependencies {
+    implementation files('libs/Schematica-1.12.2-1.8.0.169-universal.jar')
+    implementation files('libs/LunatriusCore-1.12.2-1.2.0.42-universal.jar')
+}
 
 sourceSets { main { output.resourcesDir = output.classesDir } }
