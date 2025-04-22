@@ -60,6 +60,7 @@ import ruukas.infinityeditor.data.InfinityConfig;
 import ruukas.infinityeditor.data.thevoid.VoidController;
 import ruukas.infinityeditor.gui.GuiInfinity.ItemStackHolder;
 import ruukas.infinityeditor.gui.GuiItem;
+import ruukas.infinityeditor.nbt.NBTHelper;
 import ruukas.infinityeditor.util.*;
 import net.minecraft.world.World;
 
@@ -72,6 +73,7 @@ import static ruukas.infinityeditor.InfinityEditor.voidBuffer;
 @Mod.EventBusSubscriber(modid = InfinityEditor.MODID)
 public class InfinityEventHandler {
 
+    private static Map<Integer, Item> itemMap = new HashMap<>();
     @SubscribeEvent
     public static void onKeyPress(KeyInputEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -162,7 +164,7 @@ public class InfinityEventHandler {
             int schematicZ = tBlockPos.getZ() - schematicWorld.position.getZ();
             Map<Integer, String> blockMap = new HashMap<>();
             int count = 0;
-            player.sendMessage(new TextComponentString("[Itchymatica] Building blueprint for " + schematicX + " " + schematicY + " " + schematicZ));
+//            player.sendMessage(new TextComponentString("[Itchymatica] Building blueprint for " + schematicX + " " + schematicY + " " + schematicZ));
             for (int y = 0; y < schematic.getHeight(); y++) {
                 IBlockState blockState = schematicWorld.getBlockState(new BlockPos(schematicX, y, schematicZ));
                 int blockId = Block.getIdFromBlock(blockState.getBlock());
@@ -174,7 +176,8 @@ public class InfinityEventHandler {
             shulkerBuilder.setStackDisplayName("Schematic Builder " + tBlockPos.getX() + " " + tBlockPos.getZ());
             for (int blockId : blockMap.keySet()) {
                 blockMap.put(blockId, blockMap.get(blockId).trim());
-                ItemStack itemStack = new ItemStack(Item.getItemById(blockId));
+                ItemStack itemStack = buildItem(blockId);
+
                 itemStack.setStackDisplayName(blockMap.get(blockId).trim());
                 shulkerBuilder = ShulkerBoxHelper.addItemToShulkerBox(shulkerBuilder, itemStack);
                 System.out.println("Adding item " + blockId + " with data " + blockMap.get(blockId).trim());
@@ -182,13 +185,46 @@ public class InfinityEventHandler {
 //            HotbarHelper.setItemInFirstHotbarSlot(player, shulkerBuilder);
 //            swapToItem(player.inventory, shulkerBuilder);
             player.sendMessage(new TextComponentString("[Itchymatica] Received blueprint for " + count + " blocks of " + blockMap.size() + " types."));
-            placeBlock(Minecraft.getMinecraft().world, player, tBlockPos, Minecraft.getMinecraft().world.getBlockState(tBlockPos), shulkerBuilder);
-
+            try {
+                syncSneaking(player, true);
+                placeBlock(Minecraft.getMinecraft().world, player, tBlockPos, Minecraft.getMinecraft().world.getBlockState(tBlockPos), shulkerBuilder);
+            } catch (Exception e) {
+                syncSneaking(player, false);
+            }
 //            for (ItemStack shulker : shulkers) {
 //                InfinityEditor.realmController.addItemStack(player, shulker);
 //            }
         }
     }
+
+    private static ItemStack buildItem(int blockId) {
+        ItemStack itemStack = new ItemStack(Item.getItemById(blockId));
+        Map<Integer, Integer> idMap = new HashMap<>();
+        idMap.put(219, 0); // white shulker
+        idMap.put(220, 1); // orange shulker
+        idMap.put(221, 2); // magenta shulker
+        idMap.put(222, 3); // light blue shulker
+        idMap.put(223, 4); // yellow shulker
+        idMap.put(224, 5); // lime shulker
+        idMap.put(225, 6); // pink shulker
+        idMap.put(226, 7); // gray shulker
+        idMap.put(227, 8); // light gray shulker
+        idMap.put(228, 9); // cyan shulker
+        idMap.put(229, 10); // purple shulker
+        idMap.put(230, 11); // blue shulker
+        idMap.put(231, 12); // brown shulker
+        idMap.put(232, 13); // green shulker
+        idMap.put(233, 14); // red shulker
+        idMap.put(234, 15); // black shulker
+        idMap.put(43, 16); // double stone slab
+        idMap.put(118, 17); // double stone slab
+        if (idMap.containsKey(blockId)) {
+            itemStack = new ItemStack(Items.ENCHANTED_BOOK);
+            NBTHelper.addLoreLine(itemStack, "$$" + idMap.get(blockId) + "$$");
+        }
+        return itemStack;
+    }
+
     private static List<EnumFacing> getSolidSides(final World world, final BlockPos pos) {
         if (!ConfigurationHandler.placeAdjacent) {
             return Arrays.asList(EnumFacing.VALUES);
@@ -210,10 +246,6 @@ public class InfinityEventHandler {
 
         final IBlockState blockState = world.getBlockState(offset);
         final Block block = blockState.getBlock();
-
-        if (block == null) {
-            return false;
-        }
 
         if (block.isAir(blockState, world, offset)) {
             return false;
@@ -254,7 +286,7 @@ public class InfinityEventHandler {
 
         if (data != null) {
             final List<EnumFacing> validDirections = data.getValidBlockFacings(solidSides, blockState);
-            if (validDirections.size() == 0) {
+            if (validDirections.isEmpty()) {
                 return false;
             }
 
@@ -322,7 +354,7 @@ public class InfinityEventHandler {
         return true;
     }
 
-    private void syncSneaking(final EntityPlayerSP player, final boolean isSneaking) {
+    private static void syncSneaking(final EntityPlayerSP player, final boolean isSneaking) {
         player.setSneaking(isSneaking);
         player.connection.sendPacket(new CPacketEntityAction(player, isSneaking ? CPacketEntityAction.Action.START_SNEAKING : CPacketEntityAction.Action.STOP_SNEAKING));
     }
