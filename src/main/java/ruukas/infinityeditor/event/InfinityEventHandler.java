@@ -74,6 +74,7 @@ import static ruukas.infinityeditor.InfinityEditor.voidBuffer;
 public class InfinityEventHandler {
 
     private static Map<Integer, Item> itemMap = new HashMap<>();
+
     @SubscribeEvent
     public static void onKeyPress(KeyInputEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -144,56 +145,70 @@ public class InfinityEventHandler {
         }
 
         if (InfinityEditor.keybindBuild.isPressed() && mc.world != null) {
-            EntityPlayerSP player = mc.player;
-//            List<ItemStack> shulkers = new ArrayList<>();
-            if (SchematicPrinter.INSTANCE.getSchematic() == null) {
-                return;
-            }
-//            Block targetBlock = TargetBlockHelper.getTargetBlock(player, 5);
-            EnumFacing face = TargetBlockHelper.getTargetBlockFace(player, 5);
-            if (face == null) {
-                return;
-            }
-            BlockPos tBlockPos = TargetBlockHelper.getRayTraceResult(player, 5).getBlockPos();
-            tBlockPos = tBlockPos.offset(face);
+            trigger();
+        }
+    }
 
-            SchematicWorld schematicWorld = SchematicPrinter.INSTANCE.getSchematic();
-            ISchematic schematic = schematicWorld.getSchematic();
-            int schematicX = tBlockPos.getX() - schematicWorld.position.getX();
-            int schematicY = schematicWorld.position.getY();
-            int schematicZ = tBlockPos.getZ() - schematicWorld.position.getZ();
-            Map<Integer, String> blockMap = new HashMap<>();
-            int count = 0;
-//            player.sendMessage(new TextComponentString("[Itchymatica] Building blueprint for " + schematicX + " " + schematicY + " " + schematicZ));
-            for (int y = 0; y < schematic.getHeight(); y++) {
-                IBlockState blockState = schematicWorld.getBlockState(new BlockPos(schematicX, y, schematicZ));
-                int blockId = Block.getIdFromBlock(blockState.getBlock());
-                if (blockId == 0) continue;
-                count++;
-                blockMap.put(blockId, blockMap.getOrDefault(blockId, "") + (schematicY + y) + "#" + blockState.getBlock().getMetaFromState(blockState) + " ");
-            }
-            ItemStack shulkerBuilder = new ItemStack(Blocks.BLACK_SHULKER_BOX);
-            shulkerBuilder.setStackDisplayName("Schematic Builder " + tBlockPos.getX() + " " + tBlockPos.getZ());
-            for (int blockId : blockMap.keySet()) {
-                blockMap.put(blockId, blockMap.get(blockId).trim());
-                ItemStack itemStack = buildItem(blockId);
+    @SubscribeEvent
+    public static void onPlayerReceiveMessage(ClientChatReceivedEvent event) {
+        System.out.println("CLIENT CHAT RECEIVED EVENT");
+        String message = event.getMessage().getFormattedText();
+        if (!message.startsWith("[Itchymatica]")) {
+            return;
+        }
+        if (!message.contains("::TeleportedTo::")) {
+            return;
+        }
+        trigger();
+    }
 
-                itemStack.setStackDisplayName(blockMap.get(blockId).trim());
-                shulkerBuilder = ShulkerBoxHelper.addItemToShulkerBox(shulkerBuilder, itemStack);
-                System.out.println("Adding item " + blockId + " with data " + blockMap.get(blockId).trim());
-            }
-//            HotbarHelper.setItemInFirstHotbarSlot(player, shulkerBuilder);
-//            swapToItem(player.inventory, shulkerBuilder);
-            player.sendMessage(new TextComponentString("[Itchymatica] Received blueprint for " + count + " blocks of " + blockMap.size() + " types."));
-            try {
-                syncSneaking(player, true);
-                placeBlock(Minecraft.getMinecraft().world, player, tBlockPos, Minecraft.getMinecraft().world.getBlockState(tBlockPos), shulkerBuilder);
-            } catch (Exception e) {
-                syncSneaking(player, false);
-            }
-//            for (ItemStack shulker : shulkers) {
-//                InfinityEditor.realmController.addItemStack(player, shulker);
-//            }
+    private static void trigger() {
+        Minecraft mc = Minecraft.getMinecraft();
+
+        EntityPlayerSP player = mc.player;
+        if (SchematicPrinter.INSTANCE.getSchematic() == null) {
+            return;
+        }
+        EnumFacing face = TargetBlockHelper.getTargetBlockFace(player, 5);
+        if (face == null) {
+            return;
+        }
+        BlockPos tBlockPos = TargetBlockHelper.getRayTraceResult(player, 5).getBlockPos();
+        tBlockPos = tBlockPos.offset(face);
+
+        SchematicWorld schematicWorld = SchematicPrinter.INSTANCE.getSchematic();
+        ISchematic schematic = schematicWorld.getSchematic();
+        int schematicX = tBlockPos.getX() - schematicWorld.position.getX();
+        int schematicY = schematicWorld.position.getY();
+        int schematicZ = tBlockPos.getZ() - schematicWorld.position.getZ();
+        Map<Integer, String> blockMap = new HashMap<>();
+        int count = 0;
+        for (int y = 0; y < schematic.getHeight(); y++) {
+            IBlockState blockState = schematicWorld.getBlockState(new BlockPos(schematicX, y, schematicZ));
+            int blockId = Block.getIdFromBlock(blockState.getBlock());
+            if (blockId == 0) continue;
+            count++;
+            blockMap.put(blockId, blockMap.getOrDefault(blockId, "") + (schematicY + y) + "#" + blockState.getBlock().getMetaFromState(blockState) + " ");
+        }
+        ItemStack shulkerBuilder = new ItemStack(Blocks.BLACK_SHULKER_BOX);
+        shulkerBuilder.setStackDisplayName("Schematic Builder " + tBlockPos.getX() + " " + tBlockPos.getZ());
+        for (int blockId : blockMap.keySet()) {
+            blockMap.put(blockId, blockMap.get(blockId).trim());
+            ItemStack itemStack = buildItem(blockId);
+
+            itemStack.setStackDisplayName(blockMap.get(blockId).trim());
+            shulkerBuilder = ShulkerBoxHelper.addItemToShulkerBox(shulkerBuilder, itemStack);
+        }
+        player.sendMessage(new TextComponentString("[Itchymatica] Received blueprint for " + count + " blocks of " + blockMap.size() + " types."));
+        if (isPlayerCollidingWithBlock(player.world, player, tBlockPos)) {
+            player.sendMessage(new TextComponentString("[Itchymatica] You are colliding with a block."));
+            return;
+        }
+        try {
+            syncSneaking(player, true);
+            placeBlock(Minecraft.getMinecraft().world, player, tBlockPos, Minecraft.getMinecraft().world.getBlockState(tBlockPos), shulkerBuilder);
+        } catch (Exception e) {
+            syncSneaking(player, false);
         }
     }
 
@@ -223,6 +238,16 @@ public class InfinityEventHandler {
             NBTHelper.addLoreLine(itemStack, "$$" + idMap.get(blockId) + "$$");
         }
         return itemStack;
+    }
+
+    public static boolean isPlayerCollidingWithBlock(World world, EntityPlayer player, BlockPos blockPos) {
+        IBlockState state = world.getBlockState(blockPos);
+        if (state.getBlock().isAir(state, world, blockPos)) {
+            return false;
+        }
+        AxisAlignedBB playerBox = player.getEntityBoundingBox();
+        AxisAlignedBB blockBox = state.getBoundingBox(world, blockPos).offset(blockPos);
+        return playerBox.intersects(blockBox);
     }
 
     private static List<EnumFacing> getSolidSides(final World world, final BlockPos pos) {
